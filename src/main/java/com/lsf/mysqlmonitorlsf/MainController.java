@@ -1,5 +1,6 @@
 package com.lsf.mysqlmonitorlsf;
 
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 
@@ -9,15 +10,16 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
-import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
-import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
@@ -152,31 +154,77 @@ public class MainController {
                 this.clear(this.changeListener);
             }
 
-            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询成功"));
+//            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询成功"));
+//
+//            try {
+//                Statement stmt = this.conn.createStatement();
+//                String logSql = "select date_format(event_time,'%Y-%m-%d %H:%i:%S') as event_date ,argument from general_log where command_type='Query' and argument not like '/* mysql-conne%%' and argument not like 'SET auto%%'and argument not like 'SET sql_mo%%'and argument not like 'select event_time,argument from%%' and event_time>'" + this.date + "'";
+//                ResultSet log = stmt.executeQuery(logSql);
+//
+//                while(log.next()) {
+//                    String sql = log.getString("argument");
+//                    String event_time = log.getString("event_date");
+//                    if (!sql.equals(logSql)) {
+//                        ++this.index;
+//                        ResultTask resultTask = new ResultTask();
+//                        resultTask.setIndex(this.index);
+//                        resultTask.setDate(event_time);
+//                        resultTask.setSql(sql);
+//                        this.list.add(resultTask);
+//                    }
+//                }
+//            } catch (SQLException e) {
+//                this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询出错，" + e.getMessage()));
+//            }
+//
+//
+//
+//            this.tableView.setItems(this.list);
+            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "正在查询..."));
 
-            try {
-                Statement stmt = this.conn.createStatement();
-                String logSql = "select * from mysql.general_log where command_type =\"Query\" OR command_type =\"Execute\" order by event_time desc limit 2";
-                logSql = "select date_format(event_time,'%Y-%m-%d %H:%i:%S') as event_date ,argument from general_log where command_type='Query' and argument not like '/* mysql-conne%%' and argument not like 'SET auto%%'and argument not like 'SET sql_mo%%'and argument not like 'select event_time,argument from%%' and event_time>'" + this.date + "'";
-                ResultSet log = stmt.executeQuery(logSql);
 
-                while(log.next()) {
-                    String sql = log.getString("argument");
-                    String event_time = log.getString("event_date");
-                    if (!sql.equals(logSql)) {
-                        ++this.index;
-                        ResultTask resultTask = new ResultTask();
-                        resultTask.setIndex(this.index);
-                        resultTask.setDate(event_time);
-                        resultTask.setSql(sql);
-                        this.list.add(resultTask);
+            Task<List<ResultTask>> task = new Task<List<ResultTask>>() {
+                @Override
+                protected List<ResultTask> call() throws Exception {
+                    List<ResultTask> tempList = new ArrayList<>();
+
+                    Statement stmt = conn.createStatement();
+                    String logSql = "select date_format(event_time,'%Y-%m-%d %H:%i:%S') as event_date ,argument from general_log where command_type='Query' and argument not like '/* mysql-conne%%' and argument not like 'SET auto%%'and argument not like 'SET sql_mo%%'and argument not like 'select event_time,argument from%%' and event_time>'" + MainController.this.date + "'";
+                    ResultSet log = stmt.executeQuery(logSql);
+                    while (log.next()) {
+                        // 查询过程
+                        String sql = log.getString("argument");
+                        String event_time = log.getString("event_date");
+                        if (!sql.equals(logSql)) {
+                            MainController.this.index++;
+                            ResultTask resultTask = new ResultTask();
+                            resultTask.setIndex(MainController.this.index);
+                            resultTask.setDate(event_time);
+                            resultTask.setSql(sql);
+                            tempList.add(resultTask);
+                            //MainController.this.list.add(resultTask);
+                        }
                     }
+                    log.close();
+                    stmt.close();
+                    return tempList;
                 }
-            } catch (SQLException e) {
-                this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询出错，" + e.getMessage()));
-            }
+            };
 
-            this.tableView.setItems(this.list);
+            // setOnSucceeded()、setOnFailed()、setOnCancelled()、setOnRunning()：都会自动切回 FX Application Thread 执行，UI操作需要在UI线程中完成
+            task.setOnSucceeded(e -> {
+                List<ResultTask> resultList = task.getValue();
+                list.addAll(resultList);
+                tableView.setItems(list);
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询成功"));
+
+            });
+            task.setOnFailed(e -> {
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询失败"));
+            });
+
+            new Thread(task).start();
+
         });
         this.btn_clear.setOnAction((event) -> {
             this.clear(this.changeListener);
