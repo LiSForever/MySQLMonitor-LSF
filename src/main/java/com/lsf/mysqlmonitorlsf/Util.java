@@ -61,30 +61,4 @@ public class Util {
         return conn;
     }
 
-    public static void close(ResultSet rs, Statement stat, Connection conn) {
-        if (rs != null) {
-            try {
-                rs.close();
-            } catch (SQLException throwables) {
-                throwables.printStackTrace();
-            }
-        }
-
-        if (stat != null) {
-            try {
-                stat.close();
-            } catch (SQLException throwables) {
-                throwables.printStackTrace();
-            }
-        }
-
-        if (conn != null) {
-            try {
-                conn.close();
-            } catch (SQLException throwables) {
-                throwables.printStackTrace();
-            }
-        }
-
-    }
 }

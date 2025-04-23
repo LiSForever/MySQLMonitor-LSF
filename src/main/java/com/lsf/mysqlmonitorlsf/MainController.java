@@ -6,12 +6,12 @@ import javafx.scene.control.Label;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
@@ -75,16 +75,22 @@ public class MainController {
     // 日志记录是否开启
     private boolean  global_general_log = false;
 
+    // 数据库保活
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
     public MainController() {
     }
 
     @FXML
     public void initialize() {
         this.initConfigComponents();
+
     }
 
     private void initConfigComponents() {
-        this.testConn.setOnAction((event) -> this.conn = this.conn());
+        this.testConn.setOnAction((event) -> {
+            this.conn = this.conn();
+        });
         this.btn_clear.setDisable(true);
         this.btn_update.setDisable(true);
         this.btn_logOn.setDisable(true);
@@ -183,6 +189,7 @@ public class MainController {
             this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "正在查询..."));
 
 
+            // 数据库查询操作放在Task线程中完成
             Task<List<ResultTask>> task = new Task<List<ResultTask>>() {
                 @Override
                 protected List<ResultTask> call() throws Exception {
@@ -279,6 +286,7 @@ public class MainController {
             this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "数据库连接成功"));
             this.showAlert(AlertType.INFORMATION, "提示", "数据库连接成功");
             this.btn_logOn.setDisable(false);
+            this.keepAlive(dbHost,dbPort,dbUser,this.dbpass);
         } else {
             this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "数据库连接失败"));
             this.showAlert(AlertType.ERROR, "错误", "数据库连接失败");
@@ -316,7 +324,7 @@ public class MainController {
     }
 
     // 退出程序时调用
-    public void setGenerallogOff() {
+    private void setGenerallogOff() {
 
         if (this.global_general_log) {
             try {
@@ -328,7 +336,42 @@ public class MainController {
     }
 
     // 关闭数据库连接
-    public void closeConn(){
+    private void closeConn(){
+        try {
+            this.conn.close();
+        }catch (SQLException e){
+            System.out.println("数据库关闭异常");
+            // TODO 弹窗显示数据库异常
+        }
+    }
 
+    public void exit(){
+        this.scheduler.shutdown();
+        if (this.conn!=null){
+            setGenerallogOff();
+            closeConn();
+        }
+    }
+
+    private void keepAlive(String dbhost, int dbport, String dbuser, String dbpass){
+        this.scheduler.scheduleAtFixedRate(()->{
+            try {
+                if(this.conn!=null&&!this.conn.isClosed()){
+                    if(!this.conn.isValid(3)) {
+                        System.out.println("Connection is invalid. You may need to reconnect.");
+                        this.closeConn();
+                        this.conn = Util.getConn(dbhost,dbport,dbuser,dbpass);
+                    }
+                    try (PreparedStatement ps = conn.prepareStatement("SELECT 'keepAlive'")) {
+                        ps.executeQuery();
+                        System.out.println("[KeepAlive] Sent heartbeat to DB at " + System.currentTimeMillis());
+                    }
+                }
+            } catch (SQLException e) {
+                // 保活失败关闭该计划
+                this.scheduler.shutdown();
+                throw new RuntimeException(e);
+            }
+        },0,60, TimeUnit.SECONDS);
     }
 }

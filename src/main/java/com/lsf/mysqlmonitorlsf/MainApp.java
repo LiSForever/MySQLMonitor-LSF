@@ -20,8 +20,7 @@ public class MainApp extends Application {
         primaryStage.setTitle("MySQL监控工具");
         primaryStage.setResizable(false);
         primaryStage.setOnCloseRequest((event) -> {
-            this.controller.setGenerallogOff();
-            this.controller.closeConn();
+            this.controller.exit();
             System.exit(0);
         }
         );
