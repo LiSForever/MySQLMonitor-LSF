@@ -4,8 +4,14 @@ import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +84,9 @@ public class MainController {
     // 数据库保活
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
+    // 文件
+    private Path lastInfo = Paths.get(new File(".").getAbsolutePath(),  "lastInfo.txt");
+
     public MainController() {
     }
 
@@ -88,6 +97,9 @@ public class MainController {
     }
 
     private void initConfigComponents() {
+        // 读取上次连接信息
+        this.getLastInfo();
+
         this.testConn.setOnAction((event) -> {
             this.conn = this.conn();
         });
@@ -345,12 +357,45 @@ public class MainController {
         }
     }
 
+    private void saveInfo(){
+        String content = this.textField_host.textProperty().get()+'\t'+this.textField_port.textProperty().get()+'\t'+this.textField_user.textProperty().get()+'\t'+this.textField_password.textProperty().get();
+        try {
+            Files.write(
+                    this.lastInfo,
+                    content.getBytes("UTF-8"),
+                    StandardOpenOption.CREATE,          // 如果文件不存在就创建
+                    StandardOpenOption.TRUNCATE_EXISTING // 如果文件已存在则覆盖
+            );
+            System.out.println("写入成功！");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private  void getLastInfo(){
+        try {
+            // 读取文件所有行并拼接成一个字符串
+            String lastInfo[] = new String(Files.readAllBytes(this.lastInfo), "UTF-8").split("\t");
+            this.textField_host.textProperty().set(lastInfo[0]);
+            this.textField_port.textProperty().set(lastInfo[1]);
+            this.textField_user.textProperty().set(lastInfo[2]);
+            this.textField_password.textProperty().set(lastInfo[3]);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.out.println("读取上次连接信息失败！");
+
+        }
+    }
+
     public void exit(){
         this.scheduler.shutdown();
         if (this.conn!=null){
             setGenerallogOff();
             closeConn();
         }
+
+        this.saveInfo();
     }
 
     private void keepAlive(String dbhost, int dbport, String dbuser, String dbpass){
