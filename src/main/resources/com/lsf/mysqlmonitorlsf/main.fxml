@@ -26,6 +26,8 @@
         <Button fx:id="btn_clear" layoutX="329.0" layoutY="66.0" mnemonicParsing="false" text="清空" />
         <Label layoutX="452.0" layoutY="71.0" prefHeight="17.0" prefWidth="50.0" text="搜索：" />
         <TextField fx:id="textField_filter" layoutX="495.0" layoutY="66.0" />
+        <Button fx:id="btn_errorSql" layoutX="670.0" layoutY="66.0" mnemonicParsing="false" text="报错语句" />
+        <Button fx:id="btn_clearLog" layoutX="770.0" layoutY="66.0" mnemonicParsing="false" text="清除general_log" />
         <TableView fx:id="tableView" layoutX="25.0" layoutY="109.0" prefHeight="433.0" prefWidth="955.0">
             <columns>
                 <TableColumn fx:id="tableCol_id" prefWidth="65.0" resizable="false" text="ID" />

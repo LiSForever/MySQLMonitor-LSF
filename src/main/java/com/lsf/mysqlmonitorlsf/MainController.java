@@ -78,7 +78,7 @@ public class MainController {
     private ChangeListener<String> changeListener;
     private int index;
 
-    // 日志记录是否开启
+    // 是否设置过日志记录
     private boolean  global_general_log = false;
 
     // 数据库保活
@@ -86,6 +86,12 @@ public class MainController {
 
     // 文件
     private Path lastInfo = Paths.get(new File(".").getAbsolutePath(),  "lastInfo.txt");
+
+    @FXML
+    private Button btn_errorSql;
+    @FXML
+    private Button btn_clearLog;
+
 
     public MainController() {
     }
@@ -106,12 +112,14 @@ public class MainController {
         this.btn_clear.setDisable(true);
         this.btn_update.setDisable(true);
         this.btn_logOn.setDisable(true);
+        this.btn_errorSql.setDisable(true);
+        this.btn_clearLog.setDisable(true);
         this.tableCol_id.setCellValueFactory(new PropertyValueFactory("index"));
         this.tableCol_id.setStyle("-fx-alignment: CENTER;");
         this.tableCol_sql.setCellValueFactory(new PropertyValueFactory("sql"));
         this.tableCol_date.setCellValueFactory(new PropertyValueFactory("date"));
         this.cb_showPass.setSelected(true);
-        this.dbpass = ((String)this.textField_password.textProperty().get()).trim();
+        this.dbpass = ((String) this.textField_password.textProperty().get()).trim();
         this.textField_password.textProperty().addListener((observable, oldValue, newValue) -> {
             if (this.cb_showPass.isSelected()) {
                 this.dbpass = newValue;
@@ -148,11 +156,15 @@ public class MainController {
                 this.index = 0;
                 this.btn_clear.setDisable(false);
                 this.btn_update.setDisable(false);
+                this.btn_errorSql.setDisable(false);
+                this.btn_clearLog.setDisable(false);
             } else {
                 this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "数据库未连接或连接超时"));
                 this.showAlert(AlertType.ERROR, "错误", "数据库未连接或连接超时");
                 this.btn_clear.setDisable(true);
                 this.btn_update.setDisable(true);
+                this.btn_errorSql.setDisable(true);
+                this.btn_clearLog.setDisable(true);
             }
 
         });
@@ -172,32 +184,6 @@ public class MainController {
                 this.clear(this.changeListener);
             }
 
-//            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询成功"));
-//
-//            try {
-//                Statement stmt = this.conn.createStatement();
-//                String logSql = "select date_format(event_time,'%Y-%m-%d %H:%i:%S') as event_date ,argument from general_log where command_type='Query' and argument not like '/* mysql-conne%%' and argument not like 'SET auto%%'and argument not like 'SET sql_mo%%'and argument not like 'select event_time,argument from%%' and event_time>'" + this.date + "'";
-//                ResultSet log = stmt.executeQuery(logSql);
-//
-//                while(log.next()) {
-//                    String sql = log.getString("argument");
-//                    String event_time = log.getString("event_date");
-//                    if (!sql.equals(logSql)) {
-//                        ++this.index;
-//                        ResultTask resultTask = new ResultTask();
-//                        resultTask.setIndex(this.index);
-//                        resultTask.setDate(event_time);
-//                        resultTask.setSql(sql);
-//                        this.list.add(resultTask);
-//                    }
-//                }
-//            } catch (SQLException e) {
-//                this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "查询出错，" + e.getMessage()));
-//            }
-//
-//
-//
-//            this.tableView.setItems(this.list);
             this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "正在查询..."));
 
 
@@ -257,16 +243,16 @@ public class MainController {
                     if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
                         Clipboard clipboard = Clipboard.getSystemClipboard();
                         ClipboardContent content = new ClipboardContent();
-                        content.putString(((ResultTask)row.getItem()).getSql());
+                        content.putString(((ResultTask) row.getItem()).getSql());
                         clipboard.setContent(content);
                     } else if (event.getButton() == MouseButton.SECONDARY && event.getClickCount() == 1) {
                         row.setEditable(true);
                     } else if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 1) {
                         Tooltip tt = new Tooltip();
                         tt.setStyle("-fx-font: normal bold 13 Langdon; -fx-base: #AE3522; -fx-text-fill: orange;");
-                        tt.setText(((ResultTask)row.getItem()).getSql());
+                        tt.setText(((ResultTask) row.getItem()).getSql());
                         tt.setWrapText(true);
-                        tt.setMaxWidth((double)300.0F);
+                        tt.setMaxWidth((double) 300.0F);
                         row.setTooltip(tt);
                     }
                 }
@@ -274,11 +260,47 @@ public class MainController {
             });
             return row;
         });
+        this.btn_clearLog.setOnAction((event) -> {
+            // 清除general_log但不清除当前tableView
+            // this.clear(this.changeListener);
+            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "正在查询..."));
+
+
+            // 数据库查询操作放在Task线程中完成
+            Task<Void> task = new Task<Void>() {
+                @Override
+                protected Void call() throws Exception {
+
+                    Statement stmt = conn.createStatement();
+                    String logSql = "TRUNCATE TABLE mysql.general_log;";
+                    stmt.executeUpdate(logSql);
+                    stmt.close();
+                    return null;
+                }
+            };
+
+            // setOnSucceeded()、setOnFailed()、setOnCancelled()、setOnRunning()：都会自动切回 FX Application Thread 执行，UI操作需要在UI线程中完成
+            task.setOnSucceeded(e -> {
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "清除general_log成功"));
+
+            });
+            task.setOnFailed(e -> {
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "清除general_log失败"));
+            });
+
+            new Thread(task).start();
+
+        });
+
+        this.btn_errorSql.setOnAction((event)->{
+
+        });
     }
 
     private void clear(ChangeListener<String> changeListener) {
         this.index = 0;
         this.tableView.setItems(this.list);
+        // 非UI变动this.textField_filter，changeListener不触发
         this.textField_filter.textProperty().removeListener(changeListener);
         this.textField_filter.clear();
         this.tableView.getItems().clear();
@@ -292,6 +314,8 @@ public class MainController {
         this.btn_clear.setDisable(true);
         this.btn_update.setDisable(true);
         this.btn_logOn.setDisable(true);
+        this.btn_errorSql.setDisable(true);
+        this.btn_clearLog.setDisable(true);
         this.clear(this.changeListener);
         Connection conn = Util.getConn(dbHost, dbPort, dbUser, this.dbpass);
         if (conn != null) {
