@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
@@ -92,6 +94,12 @@ public class MainController {
     @FXML
     private Button btn_clearLog;
 
+//    private List<String> errorSQLRegex;
+//
+//    {
+//        this.errorSQLRegex = new ArrayList<String>();
+//        errorSQLRegex.add("");
+//    }
 
     public MainController() {
     }
@@ -294,8 +302,172 @@ public class MainController {
 
         this.btn_errorSql.setOnAction((event)->{
 
+            this.label_state.setText(String.format("[%s]：%s", Util.ftime(), "正在搜索..."));
+
+            Task<List<ResultTask>> task = new Task<List<ResultTask>>() {
+                @Override
+                protected List<ResultTask> call() throws Exception {
+
+                    List<ResultTask> errorList = new ArrayList<ResultTask>();
+                    for(ResultTask res:MainController.this.list){
+                        String sql = res.getSql().toLowerCase();
+                        if(MainController.isErrorSql(sql))
+                            errorList.add(res);
+                    }
+
+
+                    return errorList;
+                }
+            };
+
+            // setOnSucceeded()、setOnFailed()、setOnCancelled()、setOnRunning()：都会自动切回 FX Application Thread 执行，UI操作需要在UI线程中完成
+            task.setOnSucceeded(e -> {
+
+                // clear操作中，ui显示数据和数据本身被强耦合，清除显示数据即清除数据本身，所以这里clear操作需放在筛选list后
+                this.clear(this.changeListener);
+
+                ObservableList<ResultTask> errorList = FXCollections.observableArrayList(task.getValue());
+                tableView.setItems(errorList);
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "搜索成功"));
+            });
+            task.setOnFailed(e->{
+                label_state.setText(String.format("[%s]：%s", Util.ftime(), "搜索失败"));
+            });
+            new Thread(task).start();
         });
     }
+
+    private static boolean isErrorSql(String sql){
+        // 先把引号内部的内容除去
+        sql=removeQuoteContent(sql);
+
+        // 单双引号是否闭合
+        if(!quotesIsClosed(sql,'\'')) {
+            System.out.println(sql+"\t'\t"+"没有闭合");
+            return true;
+        }
+        if (!quotesIsClosed(sql,'\"')){
+            System.out.println(sql+"\t\"\t"+"没有闭合");
+            return true;
+        }
+        // 括号是否闭合
+        if(!isParenthesesBalanced(sql)) {
+            System.out.println(sql+"\t括号\t"+"没有闭合");
+            return true;
+        }
+        // 是否包含特殊函数和注释符，general_log 不显示注释符，暂时无法实现
+        Pattern FUNCTION_PATTERN = Pattern.compile("((if|sleep|exp|updatexml|extractvalue|version|user|load_file)\\s*\\(|(union|outfile|dumpfile))", Pattern.CASE_INSENSITIVE);
+
+        if (containsKeyword(sql,FUNCTION_PATTERN))
+            return true;
+
+        return false;
+    }
+
+    private static String removeQuoteContent(String sql){
+        int isQuotes=0;  // 当前字符是否在引号内，0不在，1是单引号，2是双引号
+        StringBuilder sb = new StringBuilder();
+
+
+        for(int i=0;i<sql.length();i++){
+            char c = sql.charAt(i);
+            if(isQuotes==0)
+                sb.append(c);
+            if(c=='\''){
+                if (isQuotes==0)
+                    isQuotes=1;
+                else if (isQuotes==1) {
+                    int backslashCount = 0;
+                    for (int j = i - 1; j >= 0 && sql.charAt(j) == '\\'; j--) {
+                        backslashCount++;
+                    }
+                    if(backslashCount%2==0) { // 奇数个 \ 就是转义
+                        isQuotes = 0;
+                        sb.append('\'');
+                    }
+                }
+            } else if (c=='\"') {
+                if (isQuotes==0)
+                    isQuotes=2;
+                else if (isQuotes==2) {
+                    int backslashCount = 0;
+                    for (int j = i - 1; j >= 0 && sql.charAt(j) == '\\'; j--) {
+                        backslashCount++;
+                    }
+                    if(backslashCount%2==0) { // 奇数个 \ 就是转义
+                        isQuotes = 0;
+                        sb.append('\"');
+                    }
+                }
+            }
+
+        }
+        return sb.toString();
+    }
+
+    private static boolean containsKeyword(String sql, Pattern pattern){
+        Matcher matcher = pattern.matcher(sql);
+
+        int find = 0;
+        while (matcher.find()) {
+            // 使用matcher.group()获取匹配的子字符串
+            System.out.println(sql+":\t"+matcher.group());
+            find++;
+        }
+        return !(find==0);
+    }
+
+    private static boolean quotesIsClosed(String sql, char a){
+        boolean inEscape = false;  // 当前字符是否被转义
+        int count = 0;
+        for(int i=0;i<sql.length();i++){
+            char c = sql.charAt(i);
+            if(inEscape){
+                inEscape = false;
+            }else {
+                if(c=='\\')
+                    inEscape=true;
+                else if (c==a)
+                    count++;
+            }
+        }
+        return count%2==0;
+    }
+    public static boolean isParenthesesBalanced(String s) {
+        int count = 0;
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+
+            // 判断前面有多少个连续的 '\'
+            int backslashCount = 0;
+            for (int j = i - 1; j >= 0 && s.charAt(j) == '\\'; j--) {
+                backslashCount++;
+            }
+            boolean escaped = (backslashCount % 2 == 1); // 奇数个 \ 就是转义
+
+            if (c == '\'' && !inDoubleQuote && !escaped) {
+                inSingleQuote = !inSingleQuote;
+            } else if (c == '"' && !inSingleQuote && !escaped) {
+                inDoubleQuote = !inDoubleQuote;
+            } else if (!inSingleQuote && !inDoubleQuote) {
+                if (c == '(') {
+                    count++;
+                } else if (c == ')') {
+                    count--;
+                    if (count < 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return count == 0 && !inSingleQuote && !inDoubleQuote;
+    }
+
+
+
 
     private void clear(ChangeListener<String> changeListener) {
         this.index = 0;
