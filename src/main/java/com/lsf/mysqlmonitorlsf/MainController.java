@@ -356,7 +356,7 @@ public class MainController {
             return true;
         }
         // 是否包含特殊函数和注释符，general_log 不显示注释符，暂时无法实现
-        Pattern FUNCTION_PATTERN = Pattern.compile("((if|sleep|exp|updatexml|extractvalue|version|user|load_file)\\s*\\(|(union|outfile|dumpfile))", Pattern.CASE_INSENSITIVE);
+        Pattern FUNCTION_PATTERN = Pattern.compile("((if|sleep|exp|updatexml|extractvalue|version|user|load_file)\\s*\\(|(union|outfile|dumpfile|@@version))", Pattern.CASE_INSENSITIVE);
 
         if (containsKeyword(sql,FUNCTION_PATTERN))
             return true;
